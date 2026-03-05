@@ -1,0 +1,56 @@
+ame: CI/CD Pipeline — Scripts Réseau
+
+# Déclencheurs : push sur main ou PR vers main
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # ── JOB 1 : Vérification de la syntaxe Bash ──
+  lint:
+    name: 🔍 Lint — Syntaxe Bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installer shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Vérifier la syntaxe de tous les scripts .sh
+        run: |
+          find . -name "*.sh" -exec shellcheck {} \;
+          echo "✅ Tous les scripts sont syntaxiquement corrects"
+
+  # ── JOB 2 : Déploiement via SSH (uniquement sur push dans main) ──
+  deploy:
+    name: 🚀 Deploy — Copie vers le serveur
+    runs-on: ubuntu-latest
+    needs: lint  # Lance seulement si le lint a réussi
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configurer la clé SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Copier les scripts sur le serveur
+        run: |
+          scp -i ~/.ssh/id_ed25519 *.sh \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/opt/scripts/
+          echo "✅ Scripts déployés sur ${{ secrets.SERVER_IP }}"
+
+      - name: Rendre les scripts exécutables
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+            "chmod +x /opt/scripts/*.sh && echo 'OK'"
