@@ -1,4 +1,4 @@
-ame: CI/CD Pipeline — Scripts Réseau
+name: CI/CD Pipeline — Scripts Réseau
 
 # Déclencheurs : push sur main ou PR vers main
 on:
