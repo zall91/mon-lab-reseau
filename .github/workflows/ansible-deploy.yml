@@ -1,0 +1,67 @@
+name: 🤖 Ansible Deploy Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'roles/**'
+      - 'inventory/**'
+      - 'group_vars/**'
+      - 'site.yml'
+
+jobs:
+
+  # ── JOB 1 : Lint des playbooks ───────────────
+  lint:
+    name: 🔍 Ansible Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Ansible et ansible-lint
+        run: |
+          pip install ansible ansible-lint
+
+      - name: Vérifier la syntaxe du site.yml
+        run: |
+          ansible-lint site.yml
+          ansible-playbook --syntax-check -i inventory/hosts.ini site.yml
+
+  # ── JOB 2 : Déploiement Ansible ──────────────
+  deploy:
+    name: 🚀 Ansible Deploy
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Ansible
+        run: pip install ansible
+
+      - name: Configurer SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keyscan -H ${{ secrets.SERVER_WEB01_IP }} >> ~/.ssh/known_hosts
+
+      - name: Créer l'inventaire dynamique
+        run: |
+          cat > inventory/hosts_ci.ini << EOF
+          [web]
+          web01 ansible_host=${{ secrets.SERVER_WEB01_IP }} ansible_user=${{ secrets.SERVER_USER }}
+          web02 ansible_host=${{ secrets.SERVER_WEB01_IP }} ansible_user=${{ secrets.SERVER_USER }}
+          [all:vars]
+          ansible_ssh_private_key_file=~/.ssh/ansible_key
+          ansible_python_interpreter=/usr/bin/python3
+          EOF
+
+      - name: Exécuter le déploiement Ansible
+        run: |
+          ansible-playbook -i inventory/hosts_ci.ini site.yml \
+            --extra-vars "db_password=${{ secrets.DB_PASSWORD }}"
+
+      - name: Vérifier que le site répond
+        run: |
+          curl -f http://${{ secrets.SERVER_WEB01_IP }}:8084 && echo "✅ Site accessible"

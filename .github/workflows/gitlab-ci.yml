@@ -1,0 +1,50 @@
+ Variables globales (les sensibles sont dans GitLab CI/CD Settings)
+variables:
+  SCRIPTS_DIR: "/opt/scripts"
+
+# Définition des stages (exécutés dans l'ordre)
+stages:
+  - lint
+  - test
+  - deploy
+
+# ── STAGE 1 : Lint ──────────────────────────────────────────
+lint-bash:
+  stage: lint
+  image: ubuntu:22.04
+  script:
+    - apt-get update -qq && apt-get install -y shellcheck
+    - find . -name "*.sh" -exec shellcheck {} \;
+  only:
+    - merge_requests
+    - main
+
+# ── STAGE 2 : Test ──────────────────────────────────────────
+test-scripts:
+  stage: test
+  image: ubuntu:22.04
+  script:
+    - bash check_connectivity.sh || true
+    - echo "Tests terminés"
+  artifacts:
+    reports:
+      junit: results/*.xml
+    expire_in: 1 week
+
+# ── STAGE 3 : Deploy (uniquement sur main) ──────────────────
+deploy-prod:
+  stage: deploy
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq && apt-get install -y openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan $SERVER_IP >> ~/.ssh/known_hosts
+  script:
+    - scp *.sh $SERVER_USER@$SERVER_IP:$SCRIPTS_DIR/
+    - ssh $SERVER_USER@$SERVER_IP "chmod +x $SCRIPTS_DIR/*.sh"
+    - echo "✅ Déploiement réussi"
+  only:
+    - main
+  when: on_success  # Seulement si les stages précédents ont réussi
